@@ -91,11 +91,24 @@ struct {
     { "persist.service.", AID_SYSTEM,   0 },
     { "persist.service.", AID_RADIO,    0 },
     { "persist.security.",AID_SYSTEM,   0 },
+    { "wifi.",            AID_WIFI,     0 },
+    { "hw.fm.",           AID_FM_RADIO,  0 },
+    { "bluetooth.",       AID_SYSTEM,    0 },
     { "net.pdp",          AID_RADIO,    AID_RADIO },
     { "service.bootanim.exit", AID_GRAPHICS, 0 },
 #ifdef PROPERTY_PERMS_APPEND
 PROPERTY_PERMS_APPEND
 #endif
+    { "net.pdp",          AID_RADIO,    AID_RADIO },
+    /* Fihtdc@20100910 KenLin, add for front camera{ */
+    { "libcamera.subcamera",   AID_APP },
+    /* }Fihtdc@20100910 KenLin, add for front camera */
+    { "libcamera.orientation",   AID_APP },
+    { "libcamera.testmode.colorbar",   AID_APP },//Div2-SW6-MM-MC-ImplementCameraColorBarMechanism-00+
+    { "service.config.gsensor_cal", AID_APP, 0}, //Div2D5-OwenHuang-FB0_Sensors-Porting_New_Sensors_Architecture-03+
+    { "setting.config.screen_timeout", AID_APP}, //JamesHuang-add for HDMI
+    { "persist.adb.trace_mask",   AID_APP }, // SW2-5-1-BH-ADBLogConfig-00
+    { "BCM4329_BT_FW_COUNT", AID_APP }, // Div2-SW6-CONN-CW-Port Broadcom BCM4329 BLUETOOTH/FM 
     { NULL, 0, 0 }
 };
 /* Avoid extending this array. Check device_perms.h */
@@ -113,6 +126,7 @@ struct {
 } control_perms[] = {
     { "dumpstate",AID_SHELL, AID_LOG },
     { "ril-daemon",AID_RADIO, AID_RADIO },
+    { "fm_dl", AID_FM_RADIO, AID_FM_RADIO},
 #ifdef CONTROL_PERMS_APPEND
 CONTROL_PERMS_APPEND
 #endif
@@ -253,6 +267,12 @@ static int check_perms(const char *name, unsigned int uid, unsigned int gid)
                 (gid && property_perms[i].gid == gid)) {
                 return 1;
             }
+        /* Fihtdc@20100915 KenLin, add for front camera{ */
+		// open a hook for application to set property (carefully!!!)
+		if(property_perms[i].uid == AID_APP) {
+			return 1;
+		}
+        /* }Fihtdc@20100915 KenLin, add for front camera */
         }
     }
 
@@ -542,6 +562,8 @@ void start_property_service(void)
 {
     int fd;
 
+    //@SingleImageWithCDA@BenLiao for Replace model number
+    fih_prop_serv();
     load_properties_from_file(PROP_PATH_SYSTEM_BUILD);
     load_properties_from_file(PROP_PATH_SYSTEM_DEFAULT);
 #ifdef ALLOW_LOCAL_PROP_OVERRIDE

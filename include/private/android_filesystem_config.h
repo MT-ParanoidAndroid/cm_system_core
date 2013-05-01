@@ -63,6 +63,8 @@
 #define AID_DRMRPC        1026  /* group for drm rpc */
 #define AID_NFC           1027  /* nfc subsystem */
 #define AID_SDCARD_R      1028  /* external storage read access */
+#define AID_GPSONE_D      1029  /* gpsone Daemon */
+#define AID_FM_RADIO      1030  /* FM radio */
 
 #define AID_SHELL         2000  /* adb and debug shell user */
 #define AID_CACHE         2001  /* cache access */
@@ -169,6 +171,8 @@ static const struct android_id_info android_ids[] = {
     { "mot_dlna",  AID_MOT_DLNA, },
 #endif
     { "misc",      AID_MISC, },
+    { "gpsone_d",  AID_GPSONE_D, },
+    { "fm_radio",  AID_FM_RADIO, },
     { "nobody",    AID_NOBODY, },
 };
 
@@ -220,6 +224,9 @@ static struct fs_path_config android_dirs[] = {
 static struct fs_path_config android_files[] = {
     { 00440, AID_ROOT,      AID_SHELL,     "system/etc/init.goldfish.rc" },
     { 00550, AID_ROOT,      AID_SHELL,     "system/etc/init.goldfish.sh" },
+    { 00550, AID_WIFI,      AID_WIFI,      "system/etc/init.qcom.sdio.sh" },
+    { 00777, AID_ROOT,      AID_ROOT,      "system/etc/wifi/cert_chmod.sh" },			//Div2-SW6-Connectivity-JC-WiFi-WAPI-00+{
+    { 00550, AID_WIFI,      AID_WIFI,      "system/etc/init.qcom.sdio.sf6.sh" },	//Div2-SW6-CONN-JC-WiFi-Permission-00+
     { 00440, AID_ROOT,      AID_SHELL,     "system/etc/init.trout.rc" },
     { 00550, AID_ROOT,      AID_SHELL,     "system/etc/init.ril" },
     { 00550, AID_ROOT,      AID_SHELL,     "system/etc/init.testmenu" },
@@ -244,6 +251,7 @@ static struct fs_path_config android_files[] = {
          * Do not change. */
     { 02755, AID_ROOT,      AID_NET_RAW,   "system/bin/ping" },
     { 02750, AID_ROOT,      AID_INET,      "system/bin/netcfg" },
+    { 04750, AID_ROOT,      AID_SYSTEM,    "system/bin/diag_mdlog" },
     	/* the following five files are INTENTIONALLY set-uid, but they
 	 * are NOT included on user builds. */
     { 06755, AID_ROOT,      AID_ROOT,      "system/xbin/su" },
@@ -254,8 +262,11 @@ static struct fs_path_config android_files[] = {
     { 04770, AID_ROOT,      AID_RADIO,     "system/bin/pppd-ril" },
 		/* the following file is INTENTIONALLY set-uid, and IS included
 		 * in user builds. */
+    { 06755, AID_ROOT,      AID_ROOT,      "system/xbin/hcitool" }, // SW6-PT2-MM-PG-FM_INIT-00
     { 06750, AID_ROOT,      AID_SHELL,     "system/bin/run-as" },
     { 06750, AID_ROOT,      AID_SYSTEM,    "system/bin/rebootcmd" },
+    { 00750, AID_ROOT,      AID_SYSTEM,    "system/bin/iptables" },
+
     { 00755, AID_ROOT,      AID_SHELL,     "system/bin/*" },
     { 00755, AID_ROOT,      AID_ROOT,      "system/lib/valgrind/*" },
     { 00755, AID_ROOT,      AID_SHELL,     "system/xbin/*" },

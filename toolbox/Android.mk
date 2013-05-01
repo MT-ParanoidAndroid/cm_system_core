@@ -52,7 +52,11 @@ TOOLS := \
 	uptime \
 	vmstat \
 	nandread \
+        qxdmlog \
 	ionice \
+	runit \
+	fmappsckt \
+	fm_server \
 	touch \
 	lsof \
 	md5
