@@ -54,6 +54,13 @@
 
 static int property_triggers_enabled = 0;
 
+//SW2-5-1-MP-DbgCfgTool-00+[
+#include <sys/ioctl.h>
+#include <cutils/dbgcfgtool.h>
+static int debug_printf_uartmsg_enable = 0;
+int clean_boot = 0; 
+//SW2-5-1-MP-DbgCfgTool-00+]
+
 #if BOOTCHART
 static int   bootchart_count;
 #endif
@@ -96,6 +103,16 @@ static time_t process_needs_restart;
 static const char *ENV[32];
 
 static unsigned emmc_boot = 0;
+// Div2-SW2-BSP,JOE HSU
+static unsigned emmc_format = 0;
+
+//Div2D5-LC-BSP-Modify_SF5_EFS_Partition-00 +[
+#ifdef CONFIG_FIH_SF5_DUAL_SD_CARD
+static unsigned SF5_4G = 0;
+char fih_baseband[6];
+char fih_devmodel[6];
+#endif
+//Div2D5-LC-BSP-Modify_SF5_EFS_Partition-00 +]
 
 static unsigned charging_mode = 0;
 
@@ -234,7 +251,7 @@ void service_start(struct service *svc, const char *dynamic_args)
             }
         }
 
-        if (needs_console) {
+        if (needs_console || debug_printf_uartmsg_enable) {  //SW2-5-1-MP-DbgCfgTool-00*]
             setsid();
             open_console();
         } else {
@@ -498,6 +515,69 @@ static void import_kernel_nv(char *name, int in_qemu)
     }
 }
 
+//Div2D5-LC-BSP-Modify_SF5_EFS_Partition-00 +[
+#ifdef CONFIG_FIH_SF5_DUAL_SD_CARD
+void FIH_Get_BaseBand(void)
+{
+
+    FILE* fd = NULL;
+
+    ERROR("[INIT][FIH_Get_BaseBand] Try to get baseband ID!\n");
+
+    fd = fopen("/proc/baseband", "r");
+
+    if (fd == NULL)
+    {
+        ERROR("[INIT][FIH_Get_BaseBand] open /proc/baseband fails.\n");	
+    } else {
+        ERROR("[INIT][FIH_Get_BaseBand] open /proc/baseband successfully.\n");
+        fscanf(fd,"%s", fih_baseband);
+        ERROR("\n[INIT][FIH_Get_BaseBand] Baseband (HWID) ID =%s\n", fih_baseband);
+        fclose(fd);
+    }
+
+}
+
+void FIH_Get_DevModel(void)
+{
+    FILE* fd = NULL;
+
+    ERROR("[INIT][FIH_Get_DevModel] Try to get devmodel ID!\n");
+
+    fd = fopen("/proc/devmodel", "r");
+
+    if (fd == NULL)
+    {
+        ERROR("[INIT][FIH_Get_DevModel] open /proc/devmodel fails.\n");	
+    } else {
+        ERROR("[INIT][FIH_Get_DevModel] open /proc/devmodel successfully.\n");
+        fscanf(fd,"%s", fih_devmodel);
+        ERROR("\n[INIT][FIH_Get_DevModel] Devmodel ID =%s\n", fih_devmodel);
+        fclose(fd);
+    }
+}
+
+static void check_partition_layout(void)
+{
+    FIH_Get_DevModel();
+    FIH_Get_BaseBand();
+
+    ERROR("\n[INIT][check_partition_layout] strcmp(fih_devmodel, SF5) =%d\n", strcmp(fih_devmodel, "SF5"));
+    ERROR("\n[INIT][check_partition_layout] strcmp(fih_baseband, PR2) =%d\n", strcmp(fih_baseband, "PR2"));
+	
+    if((!strcmp(fih_devmodel, "SF5")) && (!strcmp(fih_baseband, "PR1")))
+    {
+        SF5_4G = 0;
+        ERROR("[INIT][check_partition_layout] Set SF5_4G as 0\n");
+    } else {
+        SF5_4G = 1;
+        ERROR("[INIT][check_partition_layout] Set SF5_4G as 1\n");	
+    }
+
+}
+#endif
+//Div2D5-LC-BSP-Modify_SF5_EFS_Partition-00 +]
+
 static struct command *get_first_command(struct action *act)
 {
     struct listnode *node;
@@ -593,6 +673,74 @@ static int keychord_init_action(int nargs, char **args)
     return 0;
 }
 
+//SW2-5-1-MP-DbgCfgTool-00+[
+void uart_dbgcfg_init(void)
+{
+    int clean_boot_file_fd = -1, dbgcfgtool_fd = -1;
+    dbgcfg_ioctl_arg arg;
+    
+    /* Clean boot file will be created in LoggerLauncher.
+       So we assert the clean_boot flag if this file is not existed in nand flash.*/
+    clean_boot_file_fd = open(CLEAN_BOOT_FILE_PATH, O_RDWR);
+    if ( clean_boot_file_fd < 0)
+    {
+        clean_boot = 1;
+        printf("init: Clean Boot !!\n");
+    }
+    else
+    {
+        close(clean_boot_file_fd);
+    }
+
+    arg.id.group_id = DEBUG_UART_GROUP;
+
+    dbgcfgtool_fd = open(dbgcfgtool_name, O_RDWR);
+    if (dbgcfgtool_fd < 0) {
+        fprintf(stderr,"init: cannot open dbgcfgtool(%s)\n",
+                strerror(errno));
+        return;
+    }
+
+    if (clean_boot == 1)
+    {
+        dbgcfg_ioctl_arg arg;
+
+        /* Initialize DEBUG_UART_GROUP */
+        arg.id.group_id = DEBUG_UART_GROUP;
+        arg.value = 0;
+        if (ioctl(dbgcfgtool_fd, DBG_IOCTL_CMD_SET_DBGCFG_GROUP, &arg) < 0)
+        {
+            fprintf(stderr,"init: DBG_IOCTL_CMD_SET_DBGCFG_GROUP ioctl fails (%s)\n", strerror(errno));
+            close(dbgcfgtool_fd);
+            return;
+        }
+
+        close(dbgcfgtool_fd);
+        return;
+    }
+
+    if (ioctl(dbgcfgtool_fd, DBG_IOCTL_CMD_GET_DBGCFG_GROUP, &arg) < 0)
+    {
+        fprintf(stderr,"init: DBG_IOCTL_CMD_GET_DBGCFG_GROUP ioctl fails (%s)\n", strerror(errno));
+        close(dbgcfgtool_fd);
+        return;
+    }
+
+    close(dbgcfgtool_fd);
+
+    if (arg.value & (1 << (DEBUG_PRINTF_UARTMSG_CFG % GROUP_SIZE)))  //DEBUG_PRINTF_UARTMSG_CFG is ON
+    {
+        debug_printf_uartmsg_enable = 1;
+        chmod(console_name, 0666);
+    }
+    
+    if (arg.value & (1 << (DEBUG_ANDROID_UARTMSG_CFG % GROUP_SIZE)))  //DEBUG_ANDROID_UARTMSG_CFG is ON
+    {
+        chmod(console_name, 0666);
+    }
+}
+//SW2-5-1-MP-DbgCfgTool-00+]
+
 static int console_init_action(int nargs, char **args)
 {
     int fd;
@@ -666,6 +814,9 @@ static int set_init_properties_action(int nargs, char **args)
 
 static int property_service_init_action(int nargs, char **args)
 {
+
+    uart_dbgcfg_init();  //SW2-5-1-MP-DbgCfgTool-00+
+
     /* read any property files on system or data and
      * fire up the property service.  This must happen
      * after the ro.foo properties are set above so
@@ -817,6 +968,26 @@ int main(int argc, char **argv)
         } else {
             action_for_each_trigger("fs", action_add_queue_tail);
         }
+
+//Div2D5-LC-BSP-Modify_SF5_EFS_Partition-00 +[
+#ifdef CONFIG_FIH_SF5_DUAL_SD_CARD
+    check_partition_layout();
+    if (SF5_4G == 1) {
+        ERROR("[INIT][main] Enable SF5Partition4G flag.\n");
+        action_for_each_trigger("SF5Partition4G", action_add_queue_tail);
+        execute_one_command();
+    } else {
+        ERROR("[INIT][main] Enable NormalPartition flag.\n");
+        action_for_each_trigger("NormalPartition", action_add_queue_tail);
+        execute_one_command();
+    }
+#else
+    ERROR("[INIT][main] Enable NormalPartition flag.\n");
+    action_for_each_trigger("NormalPartition", action_add_queue_tail);
+    execute_one_command();
+#endif
+//Div2D5-LC-BSP-Modify_SF5_EFS_Partition-00 +]
+
         action_for_each_trigger("post-fs", action_add_queue_tail);
         action_for_each_trigger("post-fs-data", action_add_queue_tail);
     }

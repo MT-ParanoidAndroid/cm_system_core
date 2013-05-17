@@ -15,6 +15,10 @@ ifeq ($(TARGET_PRODUCT),full_x86)
 copy_from += etc/vold.fstab
 endif
 
+#FIH; Louis; 2010/5/28
+copy_from += \
+	etc/ms3c_yamaha_pre.cfg
+
 # the /system/etc/init.goldfish.sh is needed to enable emulator support
 # in the system image. In theory, we don't need these for -user builds
 # which are device-specific. However, these builds require at the moment
@@ -73,6 +77,7 @@ DIRS := $(addprefix $(TARGET_ROOT_OUT)/, \
 		sys \
 		system \
 		data \
+		hidden \
 	) \
 	$(TARGET_OUT_DATA)
 

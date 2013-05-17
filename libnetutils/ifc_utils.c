@@ -766,6 +766,16 @@ int ifc_set_default_route(const char *ifname, in_addr_t gateway)
              inet_ntoa(addr), ifname, strerror(errno));
     }
     ifc_close();
+    /* {{[FB0.B-4415][Data connection] The 3G/G icon exists. However the DUT can't connect to network sometimes, PhilipWYHuang, 20110331 */
+    if(!(memcmp(ifname, "rmnet", 5))){
+        LOGD("set the %s device state to up before set default route.", ifname);
+        result = ifc_enable(ifname);
+        if (result) {
+            printerr("failed to turn on interface %s: %s, result = %d\n", ifname, strerror(errno), result);
+            return -1;
+        }
+    }
+    /* }} [FB0.B-4415] PhilipWYHuang, 20110331 */
     return result;
 }
 
@@ -980,4 +990,22 @@ int ifc_add_route(const char *ifname, const char *dst, int prefix_length, const 
 int ifc_remove_route(const char *ifname, const char*dst, int prefix_length, const char *gw)
 {
     return ifc_act_on_route(SIOCDELRT, ifname, dst, prefix_length, gw);
+}
+
+int ifc_get_mtu(const char *name, int *mtuSz)
+{
+    struct ifreq ifr;
+    ifc_init_ifr(name, &ifr);
+
+    if (mtuSz != NULL) {
+        if(ioctl(ifc_ctl_sock, SIOCGIFMTU, &ifr) < 0) {
+            *mtuSz = 0;
+            return -2;
+        } else {
+            *mtuSz = ifr.ifr_mtu;
+            return 0;
+        }
+    }
+
+    return -1;
 }

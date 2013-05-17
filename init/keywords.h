@@ -32,6 +32,7 @@ int do_chmod(int nargs, char **args);
 int do_loglevel(int nargs, char **args);
 int do_load_persist_props(int nargs, char **args);
 int do_wait(int nargs, char **args);
+int do_losetup(int nargs, char **args);    //Div6-D1-JL-UsbPorting-00+  Pc-tool
 #define __MAKE_KEYWORD_ENUM__
 #define KEYWORD(symbol, flags, nargs, func) K_##symbol,
 enum {
@@ -85,6 +86,7 @@ enum {
     KEYWORD(loglevel,    COMMAND, 1, do_loglevel)
     KEYWORD(load_persist_props,    COMMAND, 0, do_load_persist_props)
     KEYWORD(ioprio,      OPTION,  0, 0)
+    KEYWORD(losetup,     COMMAND, 2, do_losetup) //Div6-D1-JL-UsbPorting-00+  Pc-tool
 #ifdef __MAKE_KEYWORD_ENUM__
     KEYWORD_COUNT,
 };
