@@ -15,10 +15,6 @@ ifeq ($(TARGET_PRODUCT),full_x86)
 copy_from += etc/vold.fstab
 endif
 
-#FIH; Louis; 2010/5/28
-copy_from += \
-	etc/ms3c_yamaha_pre.cfg
-
 # the /system/etc/init.goldfish.sh is needed to enable emulator support
 # in the system image. In theory, we don't need these for -user builds
 # which are device-specific. However, these builds require at the moment
@@ -54,8 +50,6 @@ $(file) : $(LOCAL_PATH)/ueventd.rc | $(ACP)
 ALL_PREBUILT += $(file)
 $(INSTALLED_RAMDISK_TARGET): $(file)
 
-# init.usb.rc is handled by build/target/product/core.rc
-
 # Just like /system/etc/init.goldfish.sh, the /init.godlfish.rc is here
 # to allow -user builds to properly run the dex pre-optimization pass in
 # the emulator.
@@ -79,7 +73,6 @@ DIRS := $(addprefix $(TARGET_ROOT_OUT)/, \
 		sys \
 		system \
 		data \
-		hidden \
 	) \
 	$(TARGET_OUT_DATA)
 

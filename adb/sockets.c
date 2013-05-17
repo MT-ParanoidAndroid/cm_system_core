@@ -199,8 +199,6 @@ static void local_socket_close(asocket *s)
 static void local_socket_destroy(asocket  *s)
 {
     apacket *p, *n;
-    int exit_on_close = s->exit_on_close;
-
     D("LS(%d): destroying fde.fd=%d\n", s->id, s->fde.fd);
 
         /* IMPORTANT: the remove closes the fd
@@ -216,11 +214,6 @@ static void local_socket_destroy(asocket  *s)
     }
     remove_socket(s);
     free(s);
-
-    if (exit_on_close) {
-        D("local_socket_destroy: exiting\n");
-        exit(1);
-    }
 }
 
 
@@ -425,16 +418,6 @@ asocket *create_local_service_socket(const char *name)
 
     s = create_local_socket(fd);
     D("LS(%d): bound to '%s' via %d\n", s->id, name, fd);
-
-#if !ADB_HOST
-    if ((!strncmp(name, "root:", 5) && getuid() != 0)
-        || !strncmp(name, "usb:", 4)
-        || !strncmp(name, "tcpip:", 6)) {
-        D("LS(%d): enabling exit_on_close\n", s->id);
-        s->exit_on_close = 1;
-    }
-#endif
-
     return s;
 }
 

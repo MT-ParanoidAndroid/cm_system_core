@@ -1,6 +1,5 @@
 /*
  * Copyright 2008, The Android Open Source Project
- * Copyright (C) 2011, Code Aurora Forum. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); 
  * you may not use this file except in compliance with the License. 
@@ -47,8 +46,8 @@
 #else
 #include <stdio.h>
 #include <string.h>
-#define ALOGD printf
-#define ALOGW printf
+#define LOGD printf
+#define LOGW printf
 #endif
 
 static int ifc_ctl_sock = -1;
@@ -386,7 +385,7 @@ int ifc_clear_ipv6_addresses(const char *name) {
 
         ret = ifc_del_address(ifname, addrstr, prefixlen);
         if (ret) {
-            ALOGE("Deleting address %s/%d on %s: %s", addrstr, prefixlen, ifname,
+            LOGE("Deleting address %s/%d on %s: %s", addrstr, prefixlen, ifname,
                  strerror(-ret));
             lasterror = ret;
         }
@@ -697,7 +696,7 @@ int ifc_remove_host_routes(const char *name)
         init_sockaddr_in(&rt.rt_genmask, mask);
         addr.s_addr = dest;
         if (ioctl(ifc_ctl_sock, SIOCDELRT, &rt) < 0) {
-            ALOGD("failed to remove route for %s to %s: %s",
+            LOGD("failed to remove route for %s to %s: %s",
                  ifname, inet_ntoa(addr), strerror(errno));
         }
     }
@@ -763,7 +762,7 @@ int ifc_set_default_route(const char *ifname, in_addr_t gateway)
     ifc_init();
     addr.s_addr = gateway;
     if ((result = ifc_create_default_route(ifname, gateway)) < 0) {
-        ALOGD("failed to add %s as default route for %s: %s",
+        LOGD("failed to add %s as default route for %s: %s",
              inet_ntoa(addr), ifname, strerror(errno));
     }
     ifc_close();
@@ -784,7 +783,7 @@ int ifc_remove_default_route(const char *ifname)
     rt.rt_flags = RTF_UP|RTF_GATEWAY;
     init_sockaddr_in(&rt.rt_dst, 0);
     if ((result = ioctl(ifc_ctl_sock, SIOCDELRT, &rt)) < 0) {
-        ALOGD("failed to remove default route for %s: %s", ifname, strerror(errno));
+        LOGD("failed to remove default route for %s: %s", ifname, strerror(errno));
     }
     ifc_close();
     return result;
@@ -981,22 +980,4 @@ int ifc_add_route(const char *ifname, const char *dst, int prefix_length, const 
 int ifc_remove_route(const char *ifname, const char*dst, int prefix_length, const char *gw)
 {
     return ifc_act_on_route(SIOCDELRT, ifname, dst, prefix_length, gw);
-}
-
-int ifc_get_mtu(const char *name, int *mtuSz)
-{
-    struct ifreq ifr;
-    ifc_init_ifr(name, &ifr);
-
-    if (mtuSz != NULL) {
-        if(ioctl(ifc_ctl_sock, SIOCGIFMTU, &ifr) < 0) {
-            *mtuSz = 0;
-            return -2;
-        } else {
-            *mtuSz = ifr.ifr_mtu;
-            return 0;
-        }
-    }
-
-    return -1;
 }

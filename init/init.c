@@ -31,13 +31,6 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-
-#ifdef HAVE_SELINUX
-#include <sys/mman.h>
-#include <selinux/selinux.h>
-#include <selinux/label.h>
-#endif
-
 #include <libgen.h>
 
 #include <cutils/list.h>
@@ -59,18 +52,7 @@
 #include "util.h"
 #include "ueventd.h"
 
-#ifdef HAVE_SELINUX
-struct selabel_handle *sehandle;
-#endif
-
 static int property_triggers_enabled = 0;
-
-//SW2-5-1-MP-DbgCfgTool-00+[
-#include <sys/ioctl.h>
-#include <cutils/dbgcfgtool.h>
-static int debug_printf_uartmsg_enable = 0;
-int clean_boot = 0; 
-//SW2-5-1-MP-DbgCfgTool-00+]
 
 #if BOOTCHART
 static int   bootchart_count;
@@ -82,16 +64,16 @@ static int   bootchart_count;
 #endif
 
 static char console[32];
+static char serialno[32];
 static char bootmode[32];
+static char battchg_pause[32];
+static char baseband[32];
+static char carrier[32];
+static char bootloader[32];
 static char hardware[32];
+static char modelno[32];
 static unsigned revision = 0;
 static char qemu[32];
-static char battchg_pause[32];
-
-#ifdef HAVE_SELINUX
-static int selinux_enabled = 1;
-static int selinux_enforcing = 0;
-#endif
 
 static struct action *cur_action = NULL;
 static struct command *cur_command = NULL;
@@ -114,16 +96,6 @@ static time_t process_needs_restart;
 static const char *ENV[32];
 
 static unsigned emmc_boot = 0;
-// Div2-SW2-BSP,JOE HSU
-static unsigned emmc_format = 0;
-
-//Div2D5-LC-BSP-Modify_SF5_EFS_Partition-00 +[
-#ifdef CONFIG_FIH_SF5_DUAL_SD_CARD
-static unsigned SF5_4G = 0;
-char fih_baseband[6];
-char fih_devmodel[6];
-#endif
-//Div2D5-LC-BSP-Modify_SF5_EFS_Partition-00 +]
 
 static unsigned charging_mode = 0;
 
@@ -161,7 +133,6 @@ static void open_console()
     if ((fd = open(console_name, O_RDWR)) < 0) {
         fd = open("/dev/null", O_RDWR);
     }
-    ioctl(fd, TIOCSCTTY, 0);
     dup2(fd, 0);
     dup2(fd, 1);
     dup2(fd, 2);
@@ -189,10 +160,7 @@ void service_start(struct service *svc, const char *dynamic_args)
     pid_t pid;
     int needs_console;
     int n;
-#ifdef HAVE_SELINUX
-    char *scon = NULL;
-    int rc;
-#endif
+
         /* starting a service removes it from the disabled or reset
          * state and immediately takes it out of the restarting
          * state if it was in there
@@ -229,34 +197,6 @@ void service_start(struct service *svc, const char *dynamic_args)
         return;
     }
 
-#ifdef HAVE_SELINUX
-    if (is_selinux_enabled() > 0) {
-        char *mycon = NULL, *fcon = NULL;
-
-        INFO("computing context for service '%s'\n", svc->args[0]);
-        rc = getcon(&mycon);
-        if (rc < 0) {
-            ERROR("could not get context while starting '%s'\n", svc->name);
-            return;
-        }
-
-        rc = getfilecon(svc->args[0], &fcon);
-        if (rc < 0) {
-            ERROR("could not get context while starting '%s'\n", svc->name);
-            freecon(mycon);
-            return;
-        }
-
-        rc = security_compute_create(mycon, fcon, string_to_security_class("process"), &scon);
-        freecon(mycon);
-        freecon(fcon);
-        if (rc < 0) {
-            ERROR("could not get context while starting '%s'\n", svc->name);
-            return;
-        }
-    }
-#endif
-
     NOTICE("starting '%s'\n", svc->name);
 
     pid = fork();
@@ -267,7 +207,6 @@ void service_start(struct service *svc, const char *dynamic_args)
         char tmp[32];
         int fd, sz;
 
-        umask(077);
         if (properties_inited()) {
             get_property_workspace(&fd, &sz);
             sprintf(tmp, "%d,%d", dup(fd), sz);
@@ -276,10 +215,6 @@ void service_start(struct service *svc, const char *dynamic_args)
 
         for (ei = svc->envvars; ei; ei = ei->next)
             add_environment(ei->name, ei->value);
-
-#ifdef HAVE_SELINUX
-        setsockcreatecon(scon);
-#endif
 
         for (si = svc->sockets; si; si = si->next) {
             int socket_type = (
@@ -292,12 +227,6 @@ void service_start(struct service *svc, const char *dynamic_args)
             }
         }
 
-#ifdef HAVE_SELINUX
-        freecon(scon);
-        scon = NULL;
-        setsockcreatecon(NULL);
-#endif
-
         if (svc->ioprio_class != IoSchedClass_NONE) {
             if (android_set_ioprio(getpid(), svc->ioprio_class, svc->ioprio_pri)) {
                 ERROR("Failed to set pid %d ioprio = %d,%d: %s\n",
@@ -305,7 +234,7 @@ void service_start(struct service *svc, const char *dynamic_args)
             }
         }
 
-        if (needs_console || debug_printf_uartmsg_enable) {  //SW2-5-1-MP-DbgCfgTool-00*]
+        if (needs_console) {
             setsid();
             open_console();
         } else {
@@ -343,15 +272,6 @@ void service_start(struct service *svc, const char *dynamic_args)
             }
         }
 
-#ifdef HAVE_SELINUX
-        if (svc->seclabel) {
-            if (is_selinux_enabled() > 0 && setexeccon(svc->seclabel) < 0) {
-                ERROR("cannot setexeccon('%s'): %s\n", svc->seclabel, strerror(errno));
-                _exit(127);
-            }
-        }
-#endif
-
         if (!dynamic_args) {
             if (execve(svc->args[0], (char**) svc->args, (char**) ENV) < 0) {
                 ERROR("cannot execve('%s'): %s\n", svc->args[0], strerror(errno));
@@ -376,10 +296,6 @@ void service_start(struct service *svc, const char *dynamic_args)
         }
         _exit(127);
     }
-
-#ifdef HAVE_SELINUX
-    freecon(scon);
-#endif
 
     if (pid < 0) {
         ERROR("failed to start '%s'\n", svc->name);
@@ -535,69 +451,52 @@ void handle_control_message(const char *msg, const char *arg)
     }
 }
 
-
-//Div2D5-LC-BSP-Modify_SF5_EFS_Partition-00 +[
-#ifdef CONFIG_FIH_SF5_DUAL_SD_CARD
-void FIH_Get_BaseBand(void)
+static void import_kernel_nv(char *name, int in_qemu)
 {
+    char *value = strchr(name, '=');
 
-    FILE* fd = NULL;
+    if (value == 0) return;
+    *value++ = 0;
+    if (*name == 0) return;
 
-    ERROR("[INIT][FIH_Get_BaseBand] Try to get baseband ID!\n");
-
-    fd = fopen("/proc/baseband", "r");
-
-    if (fd == NULL)
+    if (!in_qemu)
     {
-        ERROR("[INIT][FIH_Get_BaseBand] open /proc/baseband fails.\n");	
-    } else {
-        ERROR("[INIT][FIH_Get_BaseBand] open /proc/baseband successfully.\n");
-        fscanf(fd,"%s", fih_baseband);
-        ERROR("\n[INIT][FIH_Get_BaseBand] Baseband (HWID) ID =%s\n", fih_baseband);
-        fclose(fd);
+        /* on a real device, white-list the kernel options */
+        if (!strcmp(name,"qemu")) {
+            strlcpy(qemu, value, sizeof(qemu));
+        } else if (!strcmp(name,"androidboot.console")) {
+            strlcpy(console, value, sizeof(console));
+        } else if (!strcmp(name,"androidboot.mode")) {
+            strlcpy(bootmode, value, sizeof(bootmode));
+        } else if (!strcmp(name,BOARD_CHARGING_CMDLINE_NAME)) {
+            strlcpy(battchg_pause, value, sizeof(battchg_pause));
+        } else if (!strcmp(name,"androidboot.serialno")) {
+            strlcpy(serialno, value, sizeof(serialno));
+        } else if (!strcmp(name,"androidboot.baseband")) {
+            strlcpy(baseband, value, sizeof(baseband));
+        } else if (!strcmp(name,"androidboot.carrier")) {
+            strlcpy(carrier, value, sizeof(carrier));
+        } else if (!strcmp(name,"androidboot.bootloader")) {
+            strlcpy(bootloader, value, sizeof(bootloader));
+        } else if (!strcmp(name,"androidboot.hardware")) {
+            strlcpy(hardware, value, sizeof(hardware));
+        } else if (!strcmp(name,"androidboot.emmc")) {
+            if (!strcmp(value,"true")) {
+                emmc_boot = 1;
+            }
+        } else if (!strcmp(name,"androidboot.modelno")) {
+            strlcpy(modelno, value, sizeof(modelno));
+        }
+     } else {
+        /* in the emulator, export any kernel option with the
+         * ro.kernel. prefix */
+        char  buff[32];
+        int   len = snprintf( buff, sizeof(buff), "ro.kernel.%s", name );
+        if (len < (int)sizeof(buff)) {
+            property_set( buff, value );
+        }
     }
-
 }
-
-void FIH_Get_DevModel(void)
-{
-    FILE* fd = NULL;
-
-    ERROR("[INIT][FIH_Get_DevModel] Try to get devmodel ID!\n");
-
-    fd = fopen("/proc/devmodel", "r");
-
-    if (fd == NULL)
-    {
-        ERROR("[INIT][FIH_Get_DevModel] open /proc/devmodel fails.\n");	
-    } else {
-        ERROR("[INIT][FIH_Get_DevModel] open /proc/devmodel successfully.\n");
-        fscanf(fd,"%s", fih_devmodel);
-        ERROR("\n[INIT][FIH_Get_DevModel] Devmodel ID =%s\n", fih_devmodel);
-        fclose(fd);
-    }
-}
-
-static void check_partition_layout(void)
-{
-    FIH_Get_DevModel();
-    FIH_Get_BaseBand();
-
-    ERROR("\n[INIT][check_partition_layout] strcmp(fih_devmodel, SF5) =%d\n", strcmp(fih_devmodel, "SF5"));
-    ERROR("\n[INIT][check_partition_layout] strcmp(fih_baseband, PR2) =%d\n", strcmp(fih_baseband, "PR2"));
-	
-    if((!strcmp(fih_devmodel, "SF5")) && (!strcmp(fih_baseband, "PR1")))
-    {
-        SF5_4G = 0;
-        ERROR("[INIT][check_partition_layout] Set SF5_4G as 0\n");
-    } else {
-        SF5_4G = 1;
-        ERROR("[INIT][check_partition_layout] Set SF5_4G as 1\n");	
-    }
-
-}
-#endif
-//Div2D5-LC-BSP-Modify_SF5_EFS_Partition-00 +]
 
 static struct command *get_first_command(struct action *act)
 {
@@ -658,79 +557,41 @@ static int wait_for_coldboot_done_action(int nargs, char **args)
     return ret;
 }
 
+static int charging_mode_booting(void)
+{
+#ifndef BOARD_CHARGING_MODE_BOOTING_LPM
+    return 0;
+#else
+    int f;
+    char cmb;
+    f = open(BOARD_CHARGING_MODE_BOOTING_LPM, O_RDONLY);
+    if (f < 0)
+        return 0;
+
+    if (1 != read(f, (void *)&cmb,1))
+        return 0;
+
+    close(f);
+    return ('1' == cmb);
+#endif
+}
+
+static int property_init_action(int nargs, char **args)
+{
+    bool load_defaults = true;
+
+    INFO("property init\n");
+    if (charging_mode)
+        load_defaults = false;
+    property_init(load_defaults);
+    return 0;
+}
+
 static int keychord_init_action(int nargs, char **args)
 {
     keychord_init();
     return 0;
 }
-
-//SW2-5-1-MP-DbgCfgTool-00+[
-void uart_dbgcfg_init(void)
-{
-    int clean_boot_file_fd = -1, dbgcfgtool_fd = -1;
-    dbgcfg_ioctl_arg arg;
-    
-    /* Clean boot file will be created in LoggerLauncher.
-       So we assert the clean_boot flag if this file is not existed in nand flash.*/
-    clean_boot_file_fd = open(CLEAN_BOOT_FILE_PATH, O_RDWR);
-    if ( clean_boot_file_fd < 0)
-    {
-        clean_boot = 1;
-        printf("init: Clean Boot !!\n");
-    }
-    else
-    {
-        close(clean_boot_file_fd);
-    }
-
-    arg.id.group_id = DEBUG_UART_GROUP;
-
-    dbgcfgtool_fd = open(dbgcfgtool_name, O_RDWR);
-    if (dbgcfgtool_fd < 0) {
-        fprintf(stderr,"init: cannot open dbgcfgtool(%s)\n",
-                strerror(errno));
-        return;
-    }
-
-    if (clean_boot == 1)
-    {
-        dbgcfg_ioctl_arg arg;
-
-        /* Initialize DEBUG_UART_GROUP */
-        arg.id.group_id = DEBUG_UART_GROUP;
-        arg.value = 0;
-        if (ioctl(dbgcfgtool_fd, DBG_IOCTL_CMD_SET_DBGCFG_GROUP, &arg) < 0)
-        {
-            fprintf(stderr,"init: DBG_IOCTL_CMD_SET_DBGCFG_GROUP ioctl fails (%s)\n", strerror(errno));
-            close(dbgcfgtool_fd);
-            return;
-        }
-
-        close(dbgcfgtool_fd);
-        return;
-    }
-
-    if (ioctl(dbgcfgtool_fd, DBG_IOCTL_CMD_GET_DBGCFG_GROUP, &arg) < 0)
-    {
-        fprintf(stderr,"init: DBG_IOCTL_CMD_GET_DBGCFG_GROUP ioctl fails (%s)\n", strerror(errno));
-        close(dbgcfgtool_fd);
-        return;
-    }
-
-    close(dbgcfgtool_fd);
-
-    if (arg.value & (1 << (DEBUG_PRINTF_UARTMSG_CFG % GROUP_SIZE)))  //DEBUG_PRINTF_UARTMSG_CFG is ON
-    {
-        debug_printf_uartmsg_enable = 1;
-        chmod(console_name, 0666);
-    }
-    
-    if (arg.value & (1 << (DEBUG_ANDROID_UARTMSG_CFG % GROUP_SIZE)))  //DEBUG_ANDROID_UARTMSG_CFG is ON
-    {
-        chmod(console_name, 0666);
-    }
-}
-//SW2-5-1-MP-DbgCfgTool-00+]
 
 static int console_init_action(int nargs, char **args)
 {
@@ -773,126 +634,38 @@ static int console_init_action(int nargs, char **args)
     return 0;
 }
 
-static void import_kernel_nv(char *name, int for_emulator)
-{
-    char *value = strchr(name, '=');
-    int name_len = strlen(name);
-
-    if (value == 0) return;
-    *value++ = 0;
-    if (name_len == 0) return;
-
-#ifdef HAVE_SELINUX
-    if (!strcmp(name,"enforcing")) {
-        selinux_enforcing = atoi(value);
-    } else if (!strcmp(name,"selinux")) {
-        selinux_enabled = atoi(value);
-    }
-#endif
-
-    if (for_emulator) {
-        /* in the emulator, export any kernel option with the
-         * ro.kernel. prefix */
-        char buff[PROP_NAME_MAX];
-        int len = snprintf( buff, sizeof(buff), "ro.kernel.%s", name );
-
-        if (len < (int)sizeof(buff))
-            property_set( buff, value );
-        return;
-    }
-
-    if (!strcmp(name,"qemu")) {
-        strlcpy(qemu, value, sizeof(qemu));
-    } else if (!strcmp(name,"androidboot.emmc")) {
-        if (!strcmp(value,"true")) {
-            emmc_boot = 1;
-        }
-    } else if (!strcmp(name,BOARD_CHARGING_CMDLINE_NAME)) {
-        strlcpy(battchg_pause, value, sizeof(battchg_pause));
-    } else if (!strncmp(name, "androidboot.", 12) && name_len > 12) {
-        const char *boot_prop_name = name + 12;
-        char prop[PROP_NAME_MAX];
-        int cnt;
-
-        cnt = snprintf(prop, sizeof(prop), "ro.boot.%s", boot_prop_name);
-        if (cnt < PROP_NAME_MAX)
-            property_set(prop, value);
-    }
-}
-
-static void export_kernel_boot_props(void)
+static int set_init_properties_action(int nargs, char **args)
 {
     char tmp[PROP_VALUE_MAX];
-    const char *pval;
-    unsigned i;
-    struct {
-        const char *src_prop;
-        const char *dest_prop;
-        const char *def_val;
-    } prop_map[] = {
-        { "ro.boot.serialno", "ro.serialno", "", },
-        { "ro.boot.mode", "ro.bootmode", "unknown", },
-        { "ro.boot.baseband", "ro.baseband", "unknown", },
-        { "ro.boot.bootloader", "ro.bootloader", "unknown", },
-    };
 
-    for (i = 0; i < ARRAY_SIZE(prop_map); i++) {
-        pval = property_get(prop_map[i].src_prop);
-        property_set(prop_map[i].dest_prop, pval ?: prop_map[i].def_val);
-    }
+    if (qemu[0])
+        import_kernel_cmdline(1, import_kernel_nv);
 
-    pval = property_get("ro.boot.console");
-    if (pval)
-        strlcpy(console, pval, sizeof(console));
-
-    /* save a copy for init's usage during boot */
-    strlcpy(bootmode, property_get("ro.bootmode"), sizeof(bootmode));
-
-    /* if this was given on kernel command line, override what we read
-     * before (e.g. from /proc/cpuinfo), if anything */
-    pval = property_get("ro.boot.hardware");
-    if (pval)
-        strlcpy(hardware, pval, sizeof(hardware));
-    property_set("ro.hardware", hardware);
-
-    snprintf(tmp, PROP_VALUE_MAX, "%d", revision);
-    property_set("ro.revision", tmp);
-    property_set("ro.emmc",emmc_boot ? "1" : "0");
-    property_set("ro.boot.emmc", emmc_boot ? "1" : "0");
-
-    /* TODO: these are obsolete. We should delete them */
     if (!strcmp(bootmode,"factory"))
         property_set("ro.factorytest", "1");
     else if (!strcmp(bootmode,"factory2"))
         property_set("ro.factorytest", "2");
     else
         property_set("ro.factorytest", "0");
-}
 
-static void process_kernel_cmdline(void)
-{
-    /* don't expose the raw commandline to nonpriv processes */
-    chmod("/proc/cmdline", 0440);
+    property_set("ro.serialno", serialno[0] ? serialno : "");
+    property_set("ro.bootmode", bootmode[0] ? bootmode : "unknown");
+    property_set("ro.baseband", baseband[0] ? baseband : "unknown");
+    property_set("ro.carrier", carrier[0] ? carrier : "unknown");
+    property_set("ro.bootloader", bootloader[0] ? bootloader : "unknown");
 
-    /* first pass does the common stuff, and finds if we are in qemu.
-     * second pass is only necessary for qemu to export all kernel params
-     * as props.
-     */
-    import_kernel_cmdline(0, import_kernel_nv);
-    if (qemu[0])
-        import_kernel_cmdline(1, import_kernel_nv);
+    if (modelno[0])
+        property_set("ro.boot.modelno", modelno);
 
-    /* now propogate the info given on command line to internal variables
-     * used by init as well as the current required properties
-     */
-    export_kernel_boot_props();
+    property_set("ro.hardware", hardware);
+    snprintf(tmp, PROP_VALUE_MAX, "%d", revision);
+    property_set("ro.revision", tmp);
+    property_set("ro.emmc",emmc_boot ? "1" : "0");
+    return 0;
 }
 
 static int property_service_init_action(int nargs, char **args)
 {
-
-    uart_dbgcfg_init();  //SW2-5-1-MP-DbgCfgTool-00+
-
     /* read any property files on system or data and
      * fire up the property service.  This must happen
      * after the ro.foo properties are set above so
@@ -947,116 +720,6 @@ static int bootchart_init_action(int nargs, char **args)
 }
 #endif
 
-#ifdef HAVE_SELINUX
-void selinux_load_policy(void)
-{
-    const char path_prefix[] = "/sepolicy";
-    struct selinux_opt seopts[] = {
-        { SELABEL_OPT_PATH, "/file_contexts" }
-    };
-    char path[PATH_MAX];
-    int fd, rc, vers;
-    struct stat sb;
-    void *map;
-
-    sehandle = NULL;
-    if (!selinux_enabled) {
-        INFO("SELinux:  Disabled by command line option\n");
-        return;
-    }
-
-    mkdir(SELINUXMNT, 0755);
-    if (mount("selinuxfs", SELINUXMNT, "selinuxfs", 0, NULL)) {
-        if (errno == ENODEV) {
-            /* SELinux not enabled in kernel */
-            return;
-        }
-        ERROR("SELinux:  Could not mount selinuxfs:  %s\n",
-              strerror(errno));
-        return;
-    }
-    set_selinuxmnt(SELINUXMNT);
-
-    vers = security_policyvers();
-    if (vers <= 0) {
-        ERROR("SELinux:  Unable to read policy version\n");
-        return;
-    }
-    INFO("SELinux:  Maximum supported policy version:  %d\n", vers);
-
-    snprintf(path, sizeof(path), "%s.%d",
-             path_prefix, vers);
-    fd = open(path, O_RDONLY);
-    while (fd < 0 && errno == ENOENT && --vers) {
-        snprintf(path, sizeof(path), "%s.%d",
-                 path_prefix, vers);
-        fd = open(path, O_RDONLY);
-    }
-    if (fd < 0) {
-        ERROR("SELinux:  Could not open %s:  %s\n",
-              path, strerror(errno));
-        return;
-    }
-    if (fstat(fd, &sb) < 0) {
-        ERROR("SELinux:  Could not stat %s:  %s\n",
-              path, strerror(errno));
-        return;
-    }
-    map = mmap(NULL, sb.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-    if (map == MAP_FAILED) {
-        ERROR("SELinux:  Could not map %s:  %s\n",
-              path, strerror(errno));
-        return;
-    }
-
-    rc = security_load_policy(map, sb.st_size);
-    if (rc < 0) {
-        ERROR("SELinux:  Could not load policy:  %s\n",
-              strerror(errno));
-        return;
-    }
-
-    rc = security_setenforce(selinux_enforcing);
-    if (rc < 0) {
-        ERROR("SELinux:  Could not set enforcing mode to %s:  %s\n",
-              selinux_enforcing ? "enforcing" : "permissive", strerror(errno));
-        return;
-    }
-
-    munmap(map, sb.st_size);
-    close(fd);
-    INFO("SELinux: Loaded policy from %s\n", path);
-
-    sehandle = selabel_open(SELABEL_CTX_FILE, seopts, 1);
-    if (!sehandle) {
-        ERROR("SELinux:  Could not load file_contexts:  %s\n",
-              strerror(errno));
-        return;
-    }
-    INFO("SELinux: Loaded file contexts from %s\n", seopts[0].value);
-    return;
-}
-#endif
-
-static int charging_mode_booting(void)
-{
-#ifndef BOARD_CHARGING_MODE_BOOTING_LPM
-	return 0;
-#else
-	int f;
-	char cmb;
-	f = open(BOARD_CHARGING_MODE_BOOTING_LPM, O_RDONLY);
-	if (f < 0)
-		return 0;
-
-	if (1 != read(f, (void *)&cmb,1))
-		return 0;
-
-	close(f);
-	return ('1' == cmb);
-#endif
-}
-
 int main(int argc, char **argv)
 {
     int fd_count = 0;
@@ -1067,7 +730,6 @@ int main(int argc, char **argv)
     int property_set_fd_init = 0;
     int signal_fd_init = 0;
     int keychord_fd_init = 0;
-    bool is_charger = false;
 
     if (!strcmp(basename(argv[0]), "ueventd"))
         return ueventd_main(argc, argv);
@@ -1101,22 +763,6 @@ int main(int argc, char **argv)
          */
     open_devnull_stdio();
     klog_init();
-    property_init();
-
-    get_hardware_name(hardware, &revision);
-
-    process_kernel_cmdline();
-
-#ifdef HAVE_SELINUX
-    INFO("loading selinux policy\n");
-    selinux_load_policy();
-#endif
-
-    is_charger = !strcmp(bootmode, "charger");
-
-    INFO("property init\n");
-    if (!is_charger)
-        property_load_boot_defaults();
 
     INFO("reading config file\n");
 
@@ -1125,55 +771,52 @@ int main(int argc, char **argv)
     else
        init_parse_config_file("/lpm.rc");
 
-    /* Check for an emmc initialisation file and read if present */
-    if (emmc_boot && access("/init.emmc.rc", R_OK) == 0) {
-        INFO("Reading emmc config file");
-            init_parse_config_file("/init.emmc.rc");
-    }
+    /* pull the kernel commandline and ramdisk properties file in */
+    import_kernel_cmdline(0, import_kernel_nv);
+    /* don't expose the raw commandline to nonpriv processes */
+    chmod("/proc/cmdline", 0440);
 
-    /* Check for a target specific initialisation file and read if present */
-    if (access("/init.target.rc", R_OK) == 0) {
-        INFO("Reading target specific config file");
-            init_parse_config_file("/init.target.rc");
+    get_hardware_name(hardware, &revision);
+
+    if (strcmp(bootmode, "charger") == 0 || strcmp(battchg_pause, BOARD_CHARGING_CMDLINE_VALUE) == 0)
+        charging_mode = 1;
+
+    if (!charging_mode_booting()) {
+         snprintf(tmp, sizeof(tmp), "/init.%s.rc", hardware);
+         init_parse_config_file(tmp);
+
+        /* Check for an emmc initialisation file and read if present */
+        if (emmc_boot && access("/init.emmc.rc", R_OK) == 0) {
+            INFO("Reading emmc config file");
+                init_parse_config_file("/init.emmc.rc");
+        }
+
+        /* Check for a target specific initialisation file and read if present */
+        if (access("/init.target.rc", R_OK) == 0) {
+            INFO("Reading target specific config file");
+                init_parse_config_file("/init.target.rc");
+        }
     }
 
     action_for_each_trigger("early-init", action_add_queue_tail);
 
     queue_builtin_action(wait_for_coldboot_done_action, "wait_for_coldboot_done");
+    queue_builtin_action(property_init_action, "property_init");
     queue_builtin_action(keychord_init_action, "keychord_init");
     queue_builtin_action(console_init_action, "console_init");
+    queue_builtin_action(set_init_properties_action, "set_init_properties");
 
     /* execute all the boot actions to get us started */
     action_for_each_trigger("init", action_add_queue_tail);
 
     /* skip mounting filesystems in charger mode */
-    if (!is_charger) {
+    if (strcmp(bootmode, "charger") != 0) {
         action_for_each_trigger("early-fs", action_add_queue_tail);
-        if(emmc_boot) {
+        if (emmc_boot) {
             action_for_each_trigger("emmc-fs", action_add_queue_tail);
         } else {
             action_for_each_trigger("fs", action_add_queue_tail);
         }
-
-//Div2D5-LC-BSP-Modify_SF5_EFS_Partition-00 +[
-#ifdef CONFIG_FIH_SF5_DUAL_SD_CARD
-    check_partition_layout();
-    if (SF5_4G == 1) {
-        ERROR("[INIT][main] Enable SF5Partition4G flag.\n");
-        action_for_each_trigger("SF5Partition4G", action_add_queue_tail);
-        execute_one_command();
-    } else {
-        ERROR("[INIT][main] Enable NormalPartition flag.\n");
-        action_for_each_trigger("NormalPartition", action_add_queue_tail);
-        execute_one_command();
-    }
-#else
-    ERROR("[INIT][main] Enable NormalPartition flag.\n");
-    action_for_each_trigger("NormalPartition", action_add_queue_tail);
-    execute_one_command();
-#endif
-//Div2D5-LC-BSP-Modify_SF5_EFS_Partition-00 +]
-
         action_for_each_trigger("post-fs", action_add_queue_tail);
         action_for_each_trigger("post-fs-data", action_add_queue_tail);
     }
@@ -1182,12 +825,7 @@ int main(int argc, char **argv)
     queue_builtin_action(signal_init_action, "signal_init");
     queue_builtin_action(check_startup_action, "check_startup");
 
-    /* Older bootloaders use non-standard charging modes. Check for
-     * those now, after mounting the filesystems */
-    if (strcmp(battchg_pause, BOARD_CHARGING_CMDLINE_VALUE) == 0)
-        is_charger = 1;
-
-    if (is_charger) {
+    if (charging_mode) {
         action_for_each_trigger("charger", action_add_queue_tail);
     } else {
         action_for_each_trigger("early-boot", action_add_queue_tail);

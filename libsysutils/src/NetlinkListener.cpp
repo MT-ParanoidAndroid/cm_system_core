@@ -45,13 +45,9 @@ bool NetlinkListener::onDataAvailable(SocketClient *cli)
 {
     int socket = cli->getSocket();
     ssize_t count;
-    uid_t uid = -1;
 
-    count = TEMP_FAILURE_RETRY(uevent_kernel_multicast_uid_recv(
-                                       socket, mBuffer, sizeof(mBuffer), &uid));
+    count = TEMP_FAILURE_RETRY(uevent_kernel_multicast_recv(socket, mBuffer, sizeof(mBuffer)));
     if (count < 0) {
-        if (uid > 0)
-            LOG_EVENT_INT(65537, uid);
         SLOGE("recvmsg failed (%s)", strerror(errno));
         return false;
     }

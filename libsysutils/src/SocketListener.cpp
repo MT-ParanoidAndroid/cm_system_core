@@ -29,25 +29,18 @@
 #include <sysutils/SocketListener.h>
 #include <sysutils/SocketClient.h>
 
-#define LOG_NDEBUG 0
-
 SocketListener::SocketListener(const char *socketName, bool listen) {
-    init(socketName, -1, listen, false);
+    mListen = listen;
+    mSocketName = socketName;
+    mSock = -1;
+    pthread_mutex_init(&mClientsLock, NULL);
+    mClients = new SocketClientCollection();
 }
 
 SocketListener::SocketListener(int socketFd, bool listen) {
-    init(NULL, socketFd, listen, false);
-}
-
-SocketListener::SocketListener(const char *socketName, bool listen, bool useCmdNum) {
-    init(socketName, -1, listen, useCmdNum);
-}
-
-void SocketListener::init(const char *socketName, int socketFd, bool listen, bool useCmdNum) {
     mListen = listen;
-    mSocketName = socketName;
+    mSocketName = NULL;
     mSock = socketFd;
-    mUseCmdNum = useCmdNum;
     pthread_mutex_init(&mClientsLock, NULL);
     mClients = new SocketClientCollection();
 }
@@ -80,14 +73,13 @@ int SocketListener::startListener() {
                  mSocketName, strerror(errno));
             return -1;
         }
-        SLOGV("got mSock = %d for %s", mSock, mSocketName);
     }
 
     if (mListen && listen(mSock, 4) < 0) {
         SLOGE("Unable to listen on socket (%s)", strerror(errno));
         return -1;
     } else if (!mListen)
-        mClients->push_back(new SocketClient(mSock, false, mUseCmdNum));
+        mClients->push_back(new SocketClient(mSock, false));
 
     if (pipe(mCtrlPipe)) {
         SLOGE("pipe failed (%s)", strerror(errno));
@@ -172,11 +164,11 @@ void SocketListener::runListener() {
                 max = fd;
         }
         pthread_mutex_unlock(&mClientsLock);
-        SLOGV("mListen=%d, max=%d, mSocketName=%s", mListen, max, mSocketName);
+
         if ((rc = select(max + 1, &read_fds, NULL, NULL, NULL)) < 0) {
             if (errno == EINTR)
                 continue;
-            SLOGE("select failed (%s) mListen=%d, max=%d", strerror(errno), mListen, max);
+            SLOGE("select failed (%s)", strerror(errno));
             sleep(1);
             continue;
         } else if (!rc)
@@ -192,7 +184,6 @@ void SocketListener::runListener() {
             do {
                 alen = sizeof(addr);
                 c = accept(mSock, &addr, &alen);
-                SLOGV("%s got %d from accept", mSocketName, c);
             } while (c < 0 && errno == EINTR);
             if (c < 0) {
                 SLOGE("accept failed (%s)", strerror(errno));
@@ -200,7 +191,7 @@ void SocketListener::runListener() {
                 continue;
             }
             pthread_mutex_lock(&mClientsLock);
-            mClients->push_back(new SocketClient(c, true, mUseCmdNum));
+            mClients->push_back(new SocketClient(c, true));
             pthread_mutex_unlock(&mClientsLock);
         }
 
@@ -226,7 +217,6 @@ void SocketListener::runListener() {
              * connection-based, remove and destroy it */
             if (!onDataAvailable(c) && mListen) {
                 /* Remove the client from our array */
-                SLOGV("going to zap %d for %s", c->getSocket(), mSocketName);
                 pthread_mutex_lock(&mClientsLock);
                 for (it = mClients->begin(); it != mClients->end(); ++it) {
                     if (*it == c) {
@@ -248,8 +238,19 @@ void SocketListener::sendBroadcast(int code, const char *msg, bool addErrno) {
     SocketClientCollection::iterator i;
 
     for (i = mClients->begin(); i != mClients->end(); ++i) {
-        // broadcasts are unsolicited and should not include a cmd number
-        if ((*i)->sendMsg(code, msg, addErrno, false)) {
+        if ((*i)->sendMsg(code, msg, addErrno)) {
+            SLOGW("Error sending broadcast (%s)", strerror(errno));
+        }
+    }
+    pthread_mutex_unlock(&mClientsLock);
+}
+
+void SocketListener::sendBroadcast(const char *msg) {
+    pthread_mutex_lock(&mClientsLock);
+    SocketClientCollection::iterator i;
+
+    for (i = mClients->begin(); i != mClients->end(); ++i) {
+        if ((*i)->sendMsg(msg)) {
             SLOGW("Error sending broadcast (%s)", strerror(errno));
         }
     }

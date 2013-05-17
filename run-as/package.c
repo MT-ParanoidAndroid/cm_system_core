@@ -18,7 +18,6 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
-#include <sys/mman.h>
 #include <private/android_filesystem_config.h>
 #include "package.h"
 
@@ -44,6 +43,9 @@
 /* The file containing the list of installed packages on the system */
 #define PACKAGES_LIST_FILE  "/data/system/packages.list"
 
+/* This should be large enough to hold the content of the package database file */
+#define PACKAGES_LIST_BUFFER_SIZE  65536
+
 /* Copy 'srclen' string bytes from 'src' into buffer 'dst' of size 'dstlen'
  * This function always zero-terminate the destination buffer unless
  * 'dstlen' is 0, even in case of overflow.
@@ -65,73 +67,40 @@ string_copy(char* dst, size_t dstlen, const char* src, size_t srclen)
     *dst = '\0'; /* zero-terminate result */
 }
 
-/* Open 'filename' and map it into our address-space.
- * Returns buffer address, or NULL on error
- * On exit, *filesize will be set to the file's size, or 0 on error
+/* Read up to 'buffsize' bytes into 'buff' from the file
+ * named 'filename'. Return byte length on success, or -1
+ * on error.
  */
-static void*
-map_file(const char* filename, size_t* filesize)
+static int
+read_file(const char* filename, char* buff, size_t buffsize)
 {
-    int  fd, ret, old_errno;
-    struct stat  st;
-    size_t  length = 0;
-    void*   address = NULL;
+    int  fd, len, old_errno;
 
-    *filesize = 0;
+    /* check the input buffer size */
+    if (buffsize >= INT_MAX) {
+        errno = EINVAL;
+        return -1;
+    }
 
     /* open the file for reading */
-    fd = TEMP_FAILURE_RETRY(open(filename, O_RDONLY));
+    do {
+        fd = open(filename, O_RDONLY);
+    } while (fd < 0 && errno == EINTR);
+
     if (fd < 0)
-        return NULL;
+        return -1;
 
-    /* get its size */
-    ret = TEMP_FAILURE_RETRY(fstat(fd, &st));
-    if (ret < 0)
-        goto EXIT;
+    /* read the content */
+    do {
+        len = read(fd, buff, buffsize);
+    } while (len < 0 && errno == EINTR);
 
-    /* Ensure that the file is owned by the system user */
-    if ((st.st_uid != AID_SYSTEM) || (st.st_gid != AID_SYSTEM)) {
-        goto EXIT;
-    }
-
-    /* Ensure that the file has sane permissions */
-    if ((st.st_mode & S_IWOTH) != 0) {
-        goto EXIT;
-    }
-
-    /* Ensure that the size is not ridiculously large */
-    length = (size_t)st.st_size;
-    if ((off_t)length != st.st_size) {
-        errno = ENOMEM;
-        goto EXIT;
-    }
-
-    /* Memory-map the file now */
-    address = TEMP_FAILURE_RETRY(mmap(NULL, length, PROT_READ, MAP_PRIVATE, fd, 0));
-    if (address == MAP_FAILED) {
-        address = NULL;
-        goto EXIT;
-    }
-
-    /* We're good, return size */
-    *filesize = length;
-
-EXIT:
     /* close the file, preserve old errno for better diagnostics */
     old_errno = errno;
     close(fd);
     errno = old_errno;
 
-    return address;
-}
-
-/* unmap the file, but preserve errno */
-static void
-unmap_file(void*  address, size_t  size)
-{
-    int old_errno = errno;
-    TEMP_FAILURE_RETRY(munmap(address, size));
-    errno = old_errno;
+    return len;
 }
 
 /* Check that a given directory:
@@ -402,18 +371,18 @@ BAD:
 int
 get_package_info(const char* pkgName, PackageInfo *info)
 {
-    char*        buffer;
-    size_t       buffer_len;
+    static char  buffer[PACKAGES_LIST_BUFFER_SIZE];
+    int          buffer_len;
     const char*  p;
     const char*  buffer_end;
-    int          result = -1;
+    int          result;
 
     info->uid          = 0;
     info->isDebuggable = 0;
     info->dataDir[0]   = '\0';
 
-    buffer = map_file(PACKAGES_LIST_FILE, &buffer_len);
-    if (buffer == NULL)
+    buffer_len = read_file(PACKAGES_LIST_FILE, buffer, sizeof buffer);
+    if (buffer_len < 0)
         return -1;
 
     p          = buffer;
@@ -486,8 +455,7 @@ get_package_info(const char* pkgName, PackageInfo *info)
         string_copy(info->dataDir, sizeof info->dataDir, p, q - p);
 
         /* Ignore the rest */
-        result = 0;
-        goto EXIT;
+        return 0;
 
     NEXT_LINE:
         p = next;
@@ -495,14 +463,9 @@ get_package_info(const char* pkgName, PackageInfo *info)
 
     /* the package is unknown */
     errno = ENOENT;
-    result = -1;
-    goto EXIT;
+    return -1;
 
 BAD_FORMAT:
     errno = EINVAL;
-    result = -1;
-
-EXIT:
-    unmap_file(buffer, buffer_len);
-    return result;
+    return -1;
 }

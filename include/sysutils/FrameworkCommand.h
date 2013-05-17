@@ -16,7 +16,7 @@
 #ifndef __FRAMEWORK_CMD_HANDLER_H
 #define __FRAMEWORK_CMD_HANDLER_H
 
-#include "List.h"
+#include "../../../frameworks/base/include/utils/List.h"
 
 class SocketClient;
 
@@ -34,5 +34,5 @@ public:
     const char *getCommand() { return mCommand; }
 };
 
-typedef android::sysutils::List<FrameworkCommand *> FrameworkCommandCollection;
+typedef android::List<FrameworkCommand *> FrameworkCommandCollection;
 #endif

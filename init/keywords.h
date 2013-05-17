@@ -8,24 +8,18 @@ int do_class_reset(int nargs, char **args);
 int do_domainname(int nargs, char **args);
 int do_exec(int nargs, char **args);
 int do_export(int nargs, char **args);
-int do_export_rc(int nargs, char **args);
 int do_hostname(int nargs, char **args);
 int do_ifup(int nargs, char **args);
 int do_insmod(int nargs, char **args);
 int do_log(int nargs, char **args);
 int do_mkdir(int nargs, char **args);
-int do_mount_all(int nargs, char **args);
 int do_mount(int nargs, char **args);
 int do_restart(int nargs, char **args);
-int do_restorecon(int nargs, char **args);
 int do_rm(int nargs, char **args);
 int do_rmdir(int nargs, char **args);
-int do_setcon(int nargs, char **args);
-int do_setenforce(int nargs, char **args);
 int do_setkey(int nargs, char **args);
 int do_setprop(int nargs, char **args);
 int do_setrlimit(int nargs, char **args);
-int do_setsebool(int nargs, char **args);
 int do_start(int nargs, char **args);
 int do_stop(int nargs, char **args);
 int do_trigger(int nargs, char **args);
@@ -38,7 +32,6 @@ int do_chmod(int nargs, char **args);
 int do_loglevel(int nargs, char **args);
 int do_load_persist_props(int nargs, char **args);
 int do_wait(int nargs, char **args);
-int do_losetup(int nargs, char **args);    //Div6-D1-JL-UsbPorting-00+  Pc-tool
 #define __MAKE_KEYWORD_ENUM__
 #define KEYWORD(symbol, flags, nargs, func) K_##symbol,
 enum {
@@ -57,7 +50,6 @@ enum {
     KEYWORD(domainname,  COMMAND, 1, do_domainname)
     KEYWORD(exec,        COMMAND, 1, do_exec)
     KEYWORD(export,      COMMAND, 2, do_export)
-    KEYWORD(export_rc,   COMMAND, 1, do_export_rc)
     KEYWORD(group,       OPTION,  0, 0)
     KEYWORD(hostname,    COMMAND, 1, do_hostname)
     KEYWORD(ifup,        COMMAND, 1, do_ifup)
@@ -66,24 +58,18 @@ enum {
     KEYWORD(keycodes,    OPTION,  0, 0)
     KEYWORD(log,         COMMAND, 1, do_log)
     KEYWORD(mkdir,       COMMAND, 1, do_mkdir)
-    KEYWORD(mount_all,   COMMAND, 1, do_mount_all)
     KEYWORD(mount,       COMMAND, 3, do_mount)
     KEYWORD(on,          SECTION, 0, 0)
     KEYWORD(oneshot,     OPTION,  0, 0)
     KEYWORD(onrestart,   OPTION,  0, 0)
     KEYWORD(restart,     COMMAND, 1, do_restart)
-    KEYWORD(restorecon,  COMMAND, 1, do_restorecon)
     KEYWORD(rm,          COMMAND, 1, do_rm)
     KEYWORD(rmdir,       COMMAND, 1, do_rmdir)
-    KEYWORD(seclabel,    OPTION,  0, 0)
     KEYWORD(service,     SECTION, 0, 0)
-    KEYWORD(setcon,      COMMAND, 1, do_setcon)
-    KEYWORD(setenforce,  COMMAND, 1, do_setenforce)
     KEYWORD(setenv,      OPTION,  2, 0)
     KEYWORD(setkey,      COMMAND, 0, do_setkey)
     KEYWORD(setprop,     COMMAND, 2, do_setprop)
     KEYWORD(setrlimit,   COMMAND, 3, do_setrlimit)
-    KEYWORD(setsebool,   COMMAND, 1, do_setsebool)
     KEYWORD(socket,      OPTION,  0, 0)
     KEYWORD(start,       COMMAND, 1, do_start)
     KEYWORD(stop,        COMMAND, 1, do_stop)
@@ -99,7 +85,6 @@ enum {
     KEYWORD(loglevel,    COMMAND, 1, do_loglevel)
     KEYWORD(load_persist_props,    COMMAND, 0, do_load_persist_props)
     KEYWORD(ioprio,      OPTION,  0, 0)
-    KEYWORD(losetup,     COMMAND, 2, do_losetup) //Div6-D1-JL-UsbPorting-00+  Pc-tool
 #ifdef __MAKE_KEYWORD_ENUM__
     KEYWORD_COUNT,
 };

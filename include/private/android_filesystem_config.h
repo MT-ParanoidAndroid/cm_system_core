@@ -1,6 +1,5 @@
 /*
  * Copyright (C) 2007 The Android Open Source Project
- * Copyright (C) 2012 ParanoidAndroid Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -54,7 +53,7 @@
 #define AID_KEYSTORE      1017  /* keystore subsystem */
 #define AID_USB           1018  /* USB devices */
 #define AID_DRM           1019  /* DRM server */
-#define AID_MDNSR         1020  /* MulticastDNSResponder (service discovery) */
+#define AID_AVAILABLE     1020  /* available for use */
 #define AID_GPS           1021  /* GPS daemon */
 #define AID_UNUSED1       1022  /* deprecated, DO NOT USE */
 #define AID_MEDIA_RW      1023  /* internal media storage write access */
@@ -62,9 +61,6 @@
 #define AID_UNUSED2       1025  /* deprecated, DO NOT USE */
 #define AID_DRMRPC        1026  /* group for drm rpc */
 #define AID_NFC           1027  /* nfc subsystem */
-#define AID_SDCARD_R      1028  /* external storage read access */
-#define AID_GPSONE_D      1029  /* gpsone Daemon */
-#define AID_FM_RADIO      1030  /* FM radio */
 
 #define AID_SHELL         2000  /* adb and debug shell user */
 #define AID_CACHE         2001  /* cache access */
@@ -80,7 +76,6 @@
 #define AID_NET_BW_STATS  3006  /* read bandwidth statistics */
 #define AID_NET_BW_ACCT   3007  /* change bandwidth statistics accounting */
 #define AID_QCOM_ONCRPC   3008  /* can read/write /dev/oncrpc files */
-#define AID_QCOM_DIAG     3009  /* can read/write /dev/diag */
 
 #if defined(MOTOROLA_UIDS)
 #define AID_MOT_OSH       5000  /* OSH */
@@ -101,12 +96,7 @@
 #define AID_MISC          9998  /* access to misc storage */
 #define AID_NOBODY        9999
 
-#define AID_APP          10000  /* first app user */
-
-#define AID_ISOLATED_START 99000 /* start of uids for fully isolated sandboxed processes */
-#define AID_ISOLATED_END   99999 /* end of uids for fully isolated sandboxed processes */
-
-#define AID_USER        100000  /* offset for uid ranges for each user */
+#define AID_APP          10000 /* first app user */
 
 #if !defined(EXCLUDE_FS_CONFIG_STRUCTURES)
 struct android_id_info {
@@ -132,7 +122,7 @@ static const struct android_id_info android_ids[] = {
     { "install",   AID_INSTALL, },
     { "media",     AID_MEDIA, },
     { "drm",       AID_DRM, },
-    { "mdnsr",     AID_MDNSR, },
+    { "available", AID_AVAILABLE, },
     { "nfc",       AID_NFC, },
     { "drmrpc",    AID_DRMRPC, },
     { "shell",     AID_SHELL, },
@@ -140,7 +130,6 @@ static const struct android_id_info android_ids[] = {
     { "diag",      AID_DIAG, },
     { "net_bt_admin", AID_NET_BT_ADMIN, },
     { "net_bt",    AID_NET_BT, },
-    { "sdcard_r",  AID_SDCARD_R, },
     { "sdcard_rw", AID_SDCARD_RW, },
     { "media_rw",  AID_MEDIA_RW, },
     { "vpn",       AID_VPN, },
@@ -154,7 +143,6 @@ static const struct android_id_info android_ids[] = {
     { "net_bw_stats", AID_NET_BW_STATS, },
     { "net_bw_acct", AID_NET_BW_ACCT, },
     { "qcom_oncrpc", AID_QCOM_ONCRPC, },
-    { "qcom_diag", AID_QCOM_DIAG, },
 #if defined(MOTOROLA_UIDS)
     { "mot_osh",   AID_MOT_OSH, },
     { "mot_accy",  AID_MOT_ACCY, },
@@ -171,14 +159,12 @@ static const struct android_id_info android_ids[] = {
     { "mot_dlna",  AID_MOT_DLNA, },
 #endif
     { "misc",      AID_MISC, },
-    { "gpsone_d",  AID_GPSONE_D, },
-    { "fm_radio",  AID_FM_RADIO, },
     { "nobody",    AID_NOBODY, },
 };
 
 #define android_id_count \
     (sizeof(android_ids) / sizeof(android_ids[0]))
-
+    
 struct fs_path_config {
     unsigned mode;
     unsigned uid;
@@ -224,9 +210,6 @@ static struct fs_path_config android_dirs[] = {
 static struct fs_path_config android_files[] = {
     { 00440, AID_ROOT,      AID_SHELL,     "system/etc/init.goldfish.rc" },
     { 00550, AID_ROOT,      AID_SHELL,     "system/etc/init.goldfish.sh" },
-    { 00550, AID_WIFI,      AID_WIFI,      "system/etc/init.qcom.sdio.sh" },
-    { 00777, AID_ROOT,      AID_ROOT,      "system/etc/wifi/cert_chmod.sh" },			//Div2-SW6-Connectivity-JC-WiFi-WAPI-00+{
-    { 00550, AID_WIFI,      AID_WIFI,      "system/etc/init.qcom.sdio.sf6.sh" },	//Div2-SW6-CONN-JC-WiFi-Permission-00+
     { 00440, AID_ROOT,      AID_SHELL,     "system/etc/init.trout.rc" },
     { 00550, AID_ROOT,      AID_SHELL,     "system/etc/init.ril" },
     { 00550, AID_ROOT,      AID_SHELL,     "system/etc/init.testmenu" },
@@ -238,7 +221,6 @@ static struct fs_path_config android_files[] = {
     { 00440, AID_BLUETOOTH, AID_BLUETOOTH, "system/etc/bluetooth/network.conf" },
     { 00444, AID_NET_BT,    AID_NET_BT,    "system/etc/bluetooth/blacklist.conf" },
     { 00640, AID_SYSTEM,    AID_SYSTEM,    "system/etc/bluetooth/auto_pairing.conf" },
-    { 00644, AID_SYSTEM,    AID_SYSTEM,    "system/etc/paranoid/properties.conf" },
     { 00444, AID_RADIO,     AID_AUDIO,     "system/etc/AudioPara4.csv" },
     { 00555, AID_ROOT,      AID_ROOT,      "system/etc/ppp/*" },
     { 00555, AID_ROOT,      AID_ROOT,      "system/etc/rc.*" },
@@ -251,7 +233,6 @@ static struct fs_path_config android_files[] = {
          * Do not change. */
     { 02755, AID_ROOT,      AID_NET_RAW,   "system/bin/ping" },
     { 02750, AID_ROOT,      AID_INET,      "system/bin/netcfg" },
-    { 04750, AID_ROOT,      AID_SYSTEM,    "system/bin/diag_mdlog" },
     	/* the following five files are INTENTIONALLY set-uid, but they
 	 * are NOT included on user builds. */
     { 06755, AID_ROOT,      AID_ROOT,      "system/xbin/su" },
@@ -262,11 +243,8 @@ static struct fs_path_config android_files[] = {
     { 04770, AID_ROOT,      AID_RADIO,     "system/bin/pppd-ril" },
 		/* the following file is INTENTIONALLY set-uid, and IS included
 		 * in user builds. */
-    { 06755, AID_ROOT,      AID_ROOT,      "system/xbin/hcitool" }, // SW6-PT2-MM-PG-FM_INIT-00
     { 06750, AID_ROOT,      AID_SHELL,     "system/bin/run-as" },
     { 06750, AID_ROOT,      AID_SYSTEM,    "system/bin/rebootcmd" },
-    { 00750, AID_ROOT,      AID_SYSTEM,    "system/bin/iptables" },
-
     { 00755, AID_ROOT,      AID_SHELL,     "system/bin/*" },
     { 00755, AID_ROOT,      AID_ROOT,      "system/lib/valgrind/*" },
     { 00755, AID_ROOT,      AID_SHELL,     "system/xbin/*" },
@@ -275,8 +253,6 @@ static struct fs_path_config android_files[] = {
     { 00755, AID_ROOT,      AID_ROOT,      "bin/*" },
     { 00750, AID_ROOT,      AID_SHELL,     "init*" },
     { 00750, AID_ROOT,      AID_SHELL,     "charger*" },
-    { 00750, AID_ROOT,      AID_SHELL,     "sbin/fs_mgr" },
-    { 00640, AID_ROOT,      AID_SHELL,     "fstab.*" },
     { 00755, AID_ROOT,      AID_SHELL,     "system/etc/init.d/*" },
     { 00644, AID_ROOT,      AID_ROOT,       0 },
 };
@@ -286,7 +262,7 @@ static inline void fs_config(const char *path, int dir,
 {
     struct fs_path_config *pc;
     int plen;
-
+    
     pc = dir ? android_dirs : android_files;
     plen = strlen(path);
     for(; pc->prefix; pc++){
@@ -306,9 +282,9 @@ static inline void fs_config(const char *path, int dir,
     *uid = pc->uid;
     *gid = pc->gid;
     *mode = (*mode & (~07777)) | pc->mode;
-
+    
 #if 0
-    fprintf(stderr,"< '%s' '%s' %d %d %o >\n",
+    fprintf(stderr,"< '%s' '%s' %d %d %o >\n", 
             path, pc->prefix ? pc->prefix : "", *uid, *gid, *mode);
 #endif
 }

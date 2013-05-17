@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-#include <stdlib.h>
 #include <string.h>
 #include <cutils/process_name.h>
 #include <cutils/properties.h>

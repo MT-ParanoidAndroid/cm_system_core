@@ -74,8 +74,6 @@
 #include <cutils/log.h>
 #endif
 
-#define SYS_POWER_STATE "/sys/power/state"
-
 struct key_state {
     bool pending;
     bool down;
@@ -296,28 +294,6 @@ static int read_file_int(const char *path, int *val)
     return 0;
 
 err:
-    return -1;
-}
-
-static int write_file(const char *path, char *buf, size_t sz)
-{
-    int fd;
-    size_t cnt;
-
-    fd = open(path, O_WRONLY, 0);
-    if (fd < 0)
-        goto err;
-
-    cnt = write(fd, buf, sz);
-    if (cnt <= 0)
-        goto err;
-
-    close(fd);
-    return cnt;
-
-err:
-    if (fd >= 0)
-        close(fd);
     return -1;
 }
 
@@ -697,9 +673,6 @@ static void redraw_screen(struct charger *charger)
 
 static void kick_animation(struct animation *anim)
 {
-#ifdef ALLOW_SUSPEND_IN_CHARGER
-    write_file(SYS_POWER_STATE, "on", strlen("on"));
-#endif
     anim->run = true;
 }
 
@@ -724,9 +697,6 @@ static void update_screen_state(struct charger *charger, int64_t now)
         reset_animation(batt_anim);
         charger->next_screen_transition = -1;
         gr_fb_blank(true);
-#ifdef ALLOW_SUSPEND_IN_CHARGER
-        write_file(SYS_POWER_STATE, "mem", strlen("mem"));
-#endif
         LOGV("[%lld] animation done\n", now);
         return;
     }
@@ -870,9 +840,6 @@ static void process_key(struct charger *charger, int code, int64_t now)
             if (key->pending)
                 kick_animation(charger->batt_anim);
         }
-    } else {
-        if (key->pending)
-            kick_animation(charger->batt_anim);
     }
 
     key->pending = false;
@@ -881,7 +848,6 @@ static void process_key(struct charger *charger, int code, int64_t now)
 static void handle_input_state(struct charger *charger, int64_t now)
 {
     process_key(charger, KEY_POWER, now);
-    process_key(charger, KEY_HOME, now);
 
     if (charger->next_key_check != -1 && now > charger->next_key_check)
         charger->next_key_check = -1;

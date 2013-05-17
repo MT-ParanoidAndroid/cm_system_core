@@ -40,18 +40,11 @@ static list_declare(service_list);
 static list_declare(action_list);
 static list_declare(action_queue);
 
-struct import {
-    struct listnode list;
-    const char *filename;
-};
-
 static void *parse_service(struct parse_state *state, int nargs, char **args);
 static void parse_line_service(struct parse_state *state, int nargs, char **args);
 
 static void *parse_action(struct parse_state *state, int nargs, char **args);
 static void parse_line_action(struct parse_state *state, int nargs, char **args);
-
-void add_environment(const char *name, const char *value);
 
 #define SECTION 0x01
 #define COMMAND 0x02
@@ -102,7 +95,6 @@ int lookup_keyword(const char *s)
     case 'e':
         if (!strcmp(s, "xec")) return K_exec;
         if (!strcmp(s, "xport")) return K_export;
-        if (!strcmp(s, "xport_rc")) return K_export_rc;
         break;
     case 'g':
         if (!strcmp(s, "roup")) return K_group;
@@ -121,13 +113,11 @@ int lookup_keyword(const char *s)
         break;
     case 'l':
         if (!strcmp(s, "oglevel")) return K_loglevel;
-        if (!strcmp(s, "osetup")) return K_losetup;  //Div6-D1-JL-UsbPorting-00+  Pc-tool
         if (!strcmp(s, "og")) return K_log;
         if (!strcmp(s, "oad_persist_props")) return K_load_persist_props;
         break;
     case 'm':
         if (!strcmp(s, "kdir")) return K_mkdir;
-        if (!strcmp(s, "ount_all")) return K_mount_all;
         if (!strcmp(s, "ount")) return K_mount;
         break;
     case 'o':
@@ -137,20 +127,15 @@ int lookup_keyword(const char *s)
         break;
     case 'r':
         if (!strcmp(s, "estart")) return K_restart;
-        if (!strcmp(s, "estorecon")) return K_restorecon;
         if (!strcmp(s, "mdir")) return K_rmdir;
         if (!strcmp(s, "m")) return K_rm;
         break;
     case 's':
-        if (!strcmp(s, "eclabel")) return K_seclabel;
         if (!strcmp(s, "ervice")) return K_service;
-        if (!strcmp(s, "etcon")) return K_setcon;
-        if (!strcmp(s, "etenforce")) return K_setenforce;
         if (!strcmp(s, "etenv")) return K_setenv;
         if (!strcmp(s, "etkey")) return K_setkey;
         if (!strcmp(s, "etprop")) return K_setprop;
         if (!strcmp(s, "etrlimit")) return K_setrlimit;
-        if (!strcmp(s, "etsebool")) return K_setsebool;
         if (!strcmp(s, "ocket")) return K_socket;
         if (!strcmp(s, "tart")) return K_start;
         if (!strcmp(s, "top")) return K_stop;
@@ -175,149 +160,6 @@ void parse_line_no_op(struct parse_state *state, int nargs, char **args)
 {
 }
 
-static int push_chars(char **dst, int *len, const char *chars, int cnt)
-{
-    if (cnt > *len)
-        return -1;
-
-    memcpy(*dst, chars, cnt);
-    *dst += cnt;
-    *len -= cnt;
-
-    return 0;
-}
-
-int expand_props(char *dst, const char *src, int dst_size)
-{
-    int cnt = 0;
-    char *dst_ptr = dst;
-    const char *src_ptr = src;
-    int src_len;
-    int idx = 0;
-    int ret = 0;
-    int left = dst_size - 1;
-
-    if (!src || !dst || dst_size == 0)
-        return -1;
-
-    src_len = strlen(src);
-
-    /* - variables can either be $x.y or ${x.y}, in case they are only part
-     *   of the string.
-     * - will accept $$ as a literal $.
-     * - no nested property expansion, i.e. ${foo.${bar}} is not supported,
-     *   bad things will happen
-     */
-    while (*src_ptr && left > 0) {
-        char *c;
-        char prop[PROP_NAME_MAX + 1];
-        const char *prop_val;
-        int prop_len = 0;
-
-        c = strchr(src_ptr, '$');
-        if (!c) {
-            while (left-- > 0 && *src_ptr)
-                *(dst_ptr++) = *(src_ptr++);
-            break;
-        }
-
-        memset(prop, 0, sizeof(prop));
-
-        ret = push_chars(&dst_ptr, &left, src_ptr, c - src_ptr);
-        if (ret < 0)
-            goto err_nospace;
-        c++;
-
-        if (*c == '$') {
-            *(dst_ptr++) = *(c++);
-            src_ptr = c;
-            left--;
-            continue;
-        } else if (*c == '\0') {
-            break;
-        }
-
-        if (*c == '{') {
-            c++;
-            while (*c && *c != '}' && prop_len < PROP_NAME_MAX)
-                prop[prop_len++] = *(c++);
-            if (*c != '}') {
-                /* failed to find closing brace, abort. */
-                if (prop_len == PROP_NAME_MAX)
-                    ERROR("prop name too long during expansion of '%s'\n",
-                          src);
-                else if (*c == '\0')
-                    ERROR("unexpected end of string in '%s', looking for }\n",
-                          src);
-                goto err;
-            }
-            prop[prop_len] = '\0';
-            c++;
-        } else if (*c) {
-            while (*c && prop_len < PROP_NAME_MAX)
-                prop[prop_len++] = *(c++);
-            if (prop_len == PROP_NAME_MAX && *c != '\0') {
-                ERROR("prop name too long in '%s'\n", src);
-                goto err;
-            }
-            prop[prop_len] = '\0';
-            ERROR("using deprecated syntax for specifying property '%s', use ${name} instead\n",
-                  prop);
-        }
-
-        if (prop_len == 0) {
-            ERROR("invalid zero-length prop name in '%s'\n", src);
-            goto err;
-        }
-
-        prop_val = property_get(prop);
-        if (!prop_val) {
-            ERROR("property '%s' doesn't exist while expanding '%s'\n",
-                  prop, src);
-            goto err;
-        }
-
-        ret = push_chars(&dst_ptr, &left, prop_val, strlen(prop_val));
-        if (ret < 0)
-            goto err_nospace;
-        src_ptr = c;
-        continue;
-    }
-
-    *dst_ptr = '\0';
-    return 0;
-
-err_nospace:
-    ERROR("destination buffer overflow while expanding '%s'\n", src);
-err:
-    return -1;
-}
-
-void parse_import(struct parse_state *state, int nargs, char **args)
-{
-    struct listnode *import_list = state->priv;
-    struct import *import;
-    char conf_file[PATH_MAX];
-    int ret;
-
-    if (nargs != 2) {
-        ERROR("single argument needed for import\n");
-        return;
-    }
-
-    ret = expand_props(conf_file, args[1], sizeof(conf_file));
-    if (ret) {
-        ERROR("error while handling import on line '%d' in '%s'\n",
-              state->line, state->filename);
-        return;
-    }
-
-    import = calloc(1, sizeof(struct import));
-    import->filename = strdup(conf_file);
-    list_add_tail(import_list, &import->list);
-    INFO("found import '%s', adding to import list", import->filename);
-}
-
 void parse_new_section(struct parse_state *state, int kw,
                        int nargs, char **args)
 {
@@ -339,8 +181,13 @@ void parse_new_section(struct parse_state *state, int kw,
         }
         break;
     case K_import:
-        parse_import(state, nargs, args);
-        break;
+        if (nargs != 2) {
+            ERROR("single argument needed for import\n");
+        } else {
+            int ret = init_parse_config_file(args[1]);
+            if (ret)
+                ERROR("could not import file %s\n", args[1]);
+        }
     }
     state->parse_line = parse_line_no_op;
 }
@@ -348,8 +195,6 @@ void parse_new_section(struct parse_state *state, int kw,
 static void parse_config(const char *fn, char *s)
 {
     struct parse_state state;
-    struct listnode import_list;
-    struct listnode *node;
     char *args[INIT_PARSER_MAXARGS];
     int nargs;
 
@@ -359,15 +204,11 @@ static void parse_config(const char *fn, char *s)
     state.ptr = s;
     state.nexttoken = 0;
     state.parse_line = parse_line_no_op;
-
-    list_init(&import_list);
-    state.priv = &import_list;
-
     for (;;) {
         switch (next_token(&state)) {
         case T_EOF:
             state.parse_line(&state, 0, 0);
-            goto parser_done;
+            return;
         case T_NEWLINE:
             state.line++;
             if (nargs) {
@@ -388,18 +229,6 @@ static void parse_config(const char *fn, char *s)
             break;
         }
     }
-
-parser_done:
-    list_for_each(node, &import_list) {
-         struct import *import = node_to_item(node, struct import, list);
-         int ret;
-
-         INFO("importing '%s'", import->filename);
-         ret = init_parse_config_file(import->filename);
-         if (ret)
-             ERROR("could not import file '%s' from '%s'\n",
-                   import->filename, fn);
-    }
 }
 
 int init_parse_config_file(const char *fn)
@@ -410,63 +239,6 @@ int init_parse_config_file(const char *fn)
 
     parse_config(fn, data);
     DUMP();
-    return 0;
-}
-
-typedef enum {
-    ENV_NOTREADY,
-    ENV_NAME,
-    ENV_VALUE,
-    ENV_WAITFORNEXTLINE,
-} export_rc_state_t;
-
-int init_export_rc_file(const char *fn)
-{
-    char *data;
-    struct parse_state state;
-    char *env = NULL;
-    export_rc_state_t env_state = ENV_NOTREADY;
-
-    data = read_file(fn, 0);
-    if (!data) return -1;
-
-    state.filename = fn;
-    state.line = 0;
-    state.ptr = data;
-    state.nexttoken = 0;
-    state.parse_line = parse_line_no_op;
-    for (;;) {
-        switch (next_token(&state)) {
-        case T_EOF:
-            free(data);
-            return 0;
-        case T_NEWLINE:
-            env_state = ENV_NOTREADY;
-            break;
-        case T_TEXT:
-            switch (env_state) {
-            case ENV_NOTREADY:
-                if (strcmp(state.text, "export") == 0) {
-                    env_state = ENV_NAME;
-                } else {
-                    env_state = ENV_WAITFORNEXTLINE;
-                }
-                break;
-            case ENV_NAME:
-                env = state.text;
-                env_state = ENV_VALUE;
-                break;
-            case ENV_VALUE:
-                add_environment(env, state.text);
-                env_state = ENV_WAITFORNEXTLINE;
-                break;
-            default:
-                break;
-            }
-            break;
-        }
-    }
-
     return 0;
 }
 
@@ -860,16 +632,6 @@ static void parse_line_service(struct parse_state *state, int nargs, char **args
             svc->uid = decode_uid(args[1]);
         }
         break;
-    case K_seclabel:
-#ifdef HAVE_SELINUX
-        if (nargs != 2) {
-            parse_error(state, "seclabel option requires a label string\n");
-        } else {
-            svc->seclabel = args[1];
-        }
-#endif
-        break;
-
     default:
         parse_error(state, "invalid option '%s'\n", args[0]);
     }

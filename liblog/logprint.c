@@ -704,7 +704,7 @@ int android_log_processBinaryLogBuffer(struct logger_entry *buf,
 
     if (inCount != 0) {
         fprintf(stderr,
-            "Warning: leftover binary log data (%zu bytes)\n", inCount);
+            "Warning: leftover binary log data (%d bytes)\n", inCount);
     }
 
     /*
@@ -796,7 +796,7 @@ char *android_log_formatLogLine (
             break;
         case FORMAT_THREAD:
             prefixLen = snprintf(prefixBufTmp, prefixBufTmpRemainLen,
-                "%c(%5d:%5d) ", priChar, entry->pid, entry->tid);
+                "%c(%5d:%p) ", priChar, entry->pid, (void*)entry->tid);
             strcpy(suffixBuf, "\n");
             suffixLen = 1;
             break;
@@ -816,15 +816,15 @@ char *android_log_formatLogLine (
         case FORMAT_THREADTIME:
             prefixLen = snprintf(prefixBufTmp, prefixBufTmpRemainLen,
                 "%s.%03ld %5d %5d %c %-8s: ", timeBuf, entry->tv_nsec / 1000000,
-                entry->pid, entry->tid, priChar, entry->tag);
+                (int)entry->pid, (int)entry->tid, priChar, entry->tag);
             strcpy(suffixBuf, "\n");
             suffixLen = 1;
             break;
         case FORMAT_LONG:
             prefixLen = snprintf(prefixBufTmp, prefixBufTmpRemainLen,
-                "[ %s.%03ld %5d:%5d %c/%-8s ]\n",
+                "[ %s.%03ld %5d:%p %c/%-8s ]\n",
                 timeBuf, entry->tv_nsec / 1000000, entry->pid,
-                entry->tid, priChar, entry->tag);
+                (void*)entry->tid, priChar, entry->tag);
             strcpy(suffixBuf, "\n\n");
             suffixLen = 2;
             prefixSuffixIsHeaderFooter = 1;

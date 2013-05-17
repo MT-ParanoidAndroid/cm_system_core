@@ -24,17 +24,11 @@ class SocketClient;
 class FrameworkListener : public SocketListener {
 public:
     static const int CMD_ARGS_MAX = 32;
-
-    /* 1 out of errorRate will be dropped */
-    int errorRate;
 private:
-    int mCommandCount;
-    bool mWithSeq;
     FrameworkCommandCollection *mCommands;
 
 public:
     FrameworkListener(const char *socketName);
-    FrameworkListener(const char *socketName, bool withSeq);
     virtual ~FrameworkListener() {}
 
 protected:
@@ -43,6 +37,5 @@ protected:
 
 private:
     void dispatchCommand(SocketClient *c, char *data);
-    void init(const char *socketName, bool withSeq);
 };
 #endif
